@@ -9,6 +9,7 @@
     "dev:gpt": "cross-env USE_GPT=true tsnd --respawn --transpile-only --ignore-watch node_modules src/bot.ts"
   },
   "dependencies": {
+    "@discordjs/voice": "^0.16.1",
     "chalk": "4.1.2",
     "cross-env": "^7.0.3",
     "discord.js": "^14.14.1",

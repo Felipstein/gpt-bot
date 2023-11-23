@@ -16,7 +16,10 @@ export const openai = new OpenAI({
 
 gptLog.info('ChatGPT initialized');
 
-export async function wantsToResponse(lastMessages: Collection<string, Message<boolean>>) {
+export async function wantsToResponse(
+  lastMessages: Collection<string, Message<boolean>>,
+  messageReceived: { username: string; message: string },
+) {
   const context: ChatCompletionMessageParam[] = lastMessages.map((lastMessage) => {
     const isBot = client.user!.id === lastMessage.author.id;
 
@@ -25,6 +28,8 @@ export async function wantsToResponse(lastMessages: Collection<string, Message<b
       content: isBot ? lastMessage.content : `${lastMessage.author.username}: ${lastMessage.content}`,
     };
   });
+
+  context.push({ role: 'user', content: `${messageReceived.username}: ${messageReceived.message}` });
 
   const gptResponse = await openai.chat.completions.create({
     model: 'gpt-3.5-turbo-1106',
@@ -55,7 +60,7 @@ export async function wantsToResponse(lastMessages: Collection<string, Message<b
           eita rapaiz, ganhei um prêmio no genshin
           '''
 
-          Você deve responder em JSON, com o campo "wantsToResponse", e o valor deverá ser "true" para caso você deve responder ou "false" para caso não. Por exemplo: { "wantsToResponse": true }`,
+          Você deve responder em JSON, com o campo "wantsToResponse", e o valor deverá ser "true" para caso você deve responder ou "false" para caso não. Também deve responder no campo "reason" o motivo do por que aquele valor. Por exemplo: { "wantsToResponse": true, "reason": "Me mencionaram" }`,
       },
       ...context,
     ],
@@ -65,10 +70,14 @@ export async function wantsToResponse(lastMessages: Collection<string, Message<b
   const response = gptResponse.choices[0].message.content;
 
   if (!response) {
+    gptLog.error('No response from GPT');
+
     return false;
   }
 
-  const { wantsToResponse: wantsToResponseValue } = JSON.parse(response);
+  const { wantsToResponse: wantsToResponseValue, reason } = JSON.parse(response);
+
+  gptLog.info('Wants to Response Reason:', reason);
 
   return wantsToResponseValue as boolean;
 }
@@ -101,6 +110,38 @@ export async function generateResponse(context: ChatCompletionMessageParam[]) {
             },
           },
         },
+        {
+          type: 'function',
+          function: {
+            name: 'joinCall',
+            description:
+              'Conecte-se à um canal de voz do servidor. Você pode providenciar o id do canal de voz ou, caso não tiver o id do canal de voz, você pode providenciar o id do usuário que chamou você para se conectar',
+            parameters: {
+              type: 'object',
+              properties: {
+                channelId: {
+                  type: 'string',
+                  description: 'ID do canal de voz para se conectar',
+                },
+                userId: {
+                  type: 'string',
+                  description: 'ID do usuário que chamou você para se conectar',
+                },
+              },
+            },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'leaveCall',
+            description: 'Desconecte-se do canal de voz do servidor.',
+            parameters: {
+              type: 'object',
+              properties: {},
+            },
+          },
+        },
       ],
     });
 
@@ -124,7 +165,8 @@ export async function generateResponse(context: ChatCompletionMessageParam[]) {
 
         const functionArgs = JSON.parse(toolCall.function.arguments);
 
-        const functionResponse = functionToCall(functionArgs);
+        // eslint-disable-next-line no-await-in-loop
+        const functionResponse = await functionToCall(functionArgs);
 
         messages.push({
           tool_call_id: toolCall.id,
