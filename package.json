@@ -1,0 +1,25 @@
+{
+  "name": "professor",
+  "version": "1.0.0",
+  "description": "O maior inimigo do Doutor",
+  "author": "Felipe Oliveira",
+  "license": "MIT",
+  "scripts": {
+    "dev": "tsnd --respawn --transpile-only --ignore-watch node_modules src/bot.ts",
+    "dev:gpt": "cross-env USE_GPT=true tsnd --respawn --transpile-only --ignore-watch node_modules src/bot.ts"
+  },
+  "dependencies": {
+    "chalk": "4.1.2",
+    "cross-env": "^7.0.3",
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.3.1",
+    "openai": "^4.20.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@felipstein/eslint-config-node": "^1.1.2",
+    "eslint": "^8.54.0",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.3.2"
+  }
+}

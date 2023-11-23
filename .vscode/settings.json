@@ -1,0 +1,21 @@
+{
+  "cSpell.words": [
+    "felipstein",
+    "Genshin",
+    "iceseconds",
+    "openai",
+    "OPENAI",
+    "pieba",
+    "TARDIS",
+    "tsnd"
+  ],
+  "editor.rulers": [
+    120
+  ],
+  "editor.codeActionsOnSave": {
+    "source.fixAll": "always",
+    "source.fixAll.eslint": "always",
+    "source.addMissingImports": "always",
+    "source.sortMembers": "always"
+  }
+}
