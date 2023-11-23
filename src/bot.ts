@@ -4,78 +4,116 @@ import chalk from 'chalk';
 import { Client, GatewayIntentBits } from 'discord.js';
 import { ChatCompletionMessageParam } from 'openai/resources';
 
-import { gptLog, openai } from './gpt';
+import { constants } from './constants';
+import { generateResponse, wantsToResponse } from './gpt';
 import { Logger } from './logger';
-import { prompts } from './prompts';
 
 const botLog = Logger.start(chalk.bgCyan.bold, 'BOT');
 
-const client = new Client({
+export const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
 });
+
+export const botFunctions = {
+  getUsersDescription({ username }: { username?: string }) {
+    const users = {
+      farred: {
+        otherNames: ['far', 'farredo'],
+        description:
+          'administrador de tudo, manda em tudo, ele é até tirânico, ele também adora física, explicar tudo, etc...',
+      },
+      iceseconds: {
+        otherNames: ['ice', 'samuel', 'geraldin'],
+        description:
+          'um cara bacana, todo mundo chama ele de geraldin. Ele sempre consegue os links de todos os jogos que você pedir. Ah, ele é moderador',
+      },
+      pieba: {
+        otherNames: ['zpiebis', 'mana', 'piebis', 'biinhadm'],
+        description: 'a mana, a melhor moderadora do servidor (por mais que é homem)',
+      },
+      lion: {
+        otherNames: ['elleno', 'liaun', 'liaum', 'luis', 'f', 'felipe'],
+        description: 'o meu criador, ele também é moderador, e muito legal, acho que ele é o mais legal de todos',
+      },
+      dublador: {
+        description: 'a safadinha de todos, o mais burrinho',
+      },
+      doutor: {
+        description: 'o meu maior inimigo, o bot que eu quero tirar do servidor',
+      },
+    };
+
+    if (!username) {
+      return JSON.stringify(users);
+    }
+
+    const usersFiltered = {};
+
+    Object.keys(users).forEach((user) => {
+      if (user === username.toLowerCase()) {
+        // @ts-ignore
+        usersFiltered[user] = users[user];
+      }
+
+      // @ts-ignore
+      if (users[user].otherNames?.includes(username.toLowerCase())) {
+        // @ts-ignore
+        usersFiltered[user] = users[user];
+      }
+    });
+
+    return JSON.stringify(usersFiltered);
+  },
+};
 
 client.once('ready', async () => {
   botLog.info(`Bot connected with profile ${client.user?.tag}`);
 });
 
 client.on('messageCreate', async (message) => {
-  if (message.author.discriminator === '9571') {
+  if (message.author.discriminator === constants.botDiscriminator) {
     return;
   }
-
-  // if (message.channelId !== '1176987500636541069') {
-  //   botLog.warn('Incorrect chat, ignoring...');
-  //   return;
-  // }
 
   if (message.channelId !== '1177255469388157038') {
     botLog.warn('Incorrect chat, ignoring...');
     return;
   }
 
-  message.channel.sendTyping();
-
-  botLog.info('Getting last 30 messages...');
+  botLog.info('Getting last messages...');
 
   const lastMessages = await message.channel.messages.fetch({ limit: 30 });
+  lastMessages.reverse();
 
-  const context: ChatCompletionMessageParam[] = lastMessages.map((lastMessage) => ({
-    role: ['Professor', 'Professor Bot'].includes(lastMessage.author.username) ? 'assistant' : 'user',
-    content: lastMessage.content,
-  }));
+  botLog.success('Last messages fetched');
 
-  context.reverse();
+  botLog.info('Analyzing last messages to decide if should respond...');
+  const wantsToResponseValue = await wantsToResponse(lastMessages);
 
-  const completion = await openai.chat.completions.create({
-    model: 'gpt-3.5-turbo',
-    messages: [
-      { role: 'system', content: prompts.context },
-      { role: 'user', content: 'Alfa: mereço um bom dia?' },
-      { role: 'assistant', content: 'merece eu te dar um chute na bunda' },
-      { role: 'user', content: 'FarRed: oloco professor, precisa disso? kkkk' },
-      { role: 'assistant', content: 'com quem merece, precisa sim :)' },
-      { role: 'user', content: 'iceseconds: bom dia pessoal' },
-      { role: 'assistant', content: 'bom dia iceseconds, bora uma callzinha?' },
-      ...context,
-      {
-        role: 'user',
-        content: prompts.contextReplaceble
-          .replace('{{username}}', message.author.username)
-          .replace('{{message}}', message.content),
-      },
-    ],
-  });
+  if (wantsToResponseValue) {
+    botLog.info('Wants to respond');
 
-  const choice = completion.choices[0];
+    message.channel.sendTyping();
 
-  gptLog.info(choice);
+    const context: ChatCompletionMessageParam[] = lastMessages.map((lastMessage) => {
+      const isBot = lastMessage.author.id === client.user!.id;
 
-  const response = choice.message.content;
+      return {
+        role: isBot ? 'assistant' : 'user',
+        content: isBot ? lastMessage.content : `${lastMessage.author.username}: ${lastMessage.content}`,
+      };
+    });
 
-  if (response) {
+    context.push({
+      role: 'user',
+      content: `${message.author.username}: ${message.content}`,
+    });
+
+    const response = await generateResponse(context);
+
     message.reply(response);
   } else {
-    gptLog.warn('No response provided');
+    botLog.info('Does not want to respond, ignoring...');
   }
 });
 

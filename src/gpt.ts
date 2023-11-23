@@ -1,12 +1,14 @@
 import chalk from 'chalk';
+import { Collection, Message } from 'discord.js';
 import OpenAI from 'openai';
+import { ChatCompletionMessageParam } from 'openai/resources';
 
+import { botFunctions, client } from './bot';
+import { constants } from './constants';
 import { Logger } from './logger';
 import { prompts } from './prompts';
 
-export const gptLog = Logger.start(chalk.bgGreenBright.bold, 'CHATGPT/CORE');
-const wantsResponseLog = Logger.start(chalk.bgYellow.bold, 'CHATGPT/WANTS-RESPONSE');
-const responseLog = Logger.start(chalk.bgBlueBright.bold, 'CHATGPT/RESPONSE');
+const gptLog = Logger.start(chalk.bgGreenBright.bold, 'CHATGPT/CORE');
 
 export const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -14,70 +16,144 @@ export const openai = new OpenAI({
 
 gptLog.info('ChatGPT initialized');
 
-export async function askGPT(prompt: string) {
-  gptLog.info(chalk.gray('Asking to GPT...'));
+export async function wantsToResponse(lastMessages: Collection<string, Message<boolean>>) {
+  const context: ChatCompletionMessageParam[] = lastMessages.map((lastMessage) => {
+    const isBot = client.user!.id === lastMessage.author.id;
 
-  if (!process.env.USE_GPT) {
-    throw new Error('GPT not enabled');
-  }
-
-  const response = await openai.completions.create({
-    model: 'gpt-3.5-turbo-instruct',
-    max_tokens: 150,
-    prompt,
+    return {
+      role: isBot ? 'assistant' : 'user',
+      content: isBot ? lastMessage.content : `${lastMessage.author.username}: ${lastMessage.content}`,
+    };
   });
 
-  gptLog.success('GPT answered, response:', response);
+  const gptResponse = await openai.chat.completions.create({
+    model: 'gpt-3.5-turbo-1106',
+    messages: [
+      {
+        role: 'system',
+        content: `Você recebeu uma mensagem. Analise o contexto (na qual são nada mais nada menos que as últimas mensagens do chat) e verifique se você deve responder a conversa ou não...
 
-  return response.choices[0].text.trim();
-}
+          Você deve analisar as últimas mensagens enviadas e decidir se deve responder a última mensagem enviada, pois talvez a mensagem esteja sendo redirecionada para você, seja pelo contexto ou por que mencionaram seu nome, que é ${
+            constants.botName
+          }, ou então quando mencionarem seu ID, que é ${constants.botId}.
 
-const chatContext: string[] = [];
+          Segue exemplos de que você não deveria responder:
+          '''
+          bom dia far, tudo bem?
+          '''
 
-export async function wantsToResponse(username: string, message: string) {
-  wantsResponseLog.info('Checking if wants to respond...');
+          Segue exemplos de que você deve responder:
+          '''
+          fala ${constants.botName.toLowerCase()}
+          bom dia pra todo mundo!
+          eu quero que todo mundo me responda
+          hoje é meu aniversário!
+          '''
 
-  const fullPrompt = prompts.askOrNo
-    .replace('{{username}}', username)
-    .replace('{{message}}', message)
-    .replace('{{context}}', chatContext.join('\n'));
+          Segue exemplos que você até pode responder caso queira descontrair:
+          '''
+          eita rapaiz, ganhei um prêmio no genshin
+          '''
 
-  const gptResponse = await askGPT(fullPrompt);
+          Você deve responder em JSON, com o campo "wantsToResponse", e o valor deverá ser "true" para caso você deve responder ou "false" para caso não. Por exemplo: { "wantsToResponse": true }`,
+      },
+      ...context,
+    ],
+    response_format: { type: 'json_object' },
+  });
 
-  if (['true', 'sim', '"true"', "'true'"].includes(gptResponse.toLowerCase().trim())) {
-    wantsResponseLog.info('GPT wants to respond');
-    return true;
+  const response = gptResponse.choices[0].message.content;
+
+  if (!response) {
+    return false;
   }
 
-  wantsResponseLog.info('GPT does not want to respond');
-  return false;
+  const { wantsToResponse: wantsToResponseValue } = JSON.parse(response);
+
+  return wantsToResponseValue as boolean;
 }
 
-export async function formulateResponse(username: string, message: string) {
-  responseLog.info('Formulating response...');
+export async function generateResponse(context: ChatCompletionMessageParam[]) {
+  try {
+    gptLog.info('Asking to GPT...');
 
-  const context = chatContext.join('\n');
+    const messages: ChatCompletionMessageParam[] = [{ role: 'system', content: prompts.context }, ...context];
 
-  const fullPrompt = prompts.context
-    .replace('{{username}}', username)
-    .replace('{{message}}', message)
-    .replace('{{context}}', context);
+    const gptResponse = await openai.chat.completions.create({
+      model: 'gpt-3.5-turbo-1106',
+      messages,
+      tools: [
+        {
+          type: 'function',
+          function: {
+            name: 'getUsersDescription',
+            description:
+              'Encontra descrições e outros nomes conhecidos de alguns ou todos os usuários conhecidos/famosos do servidor.',
+            parameters: {
+              type: 'object',
+              properties: {
+                username: {
+                  type: 'string',
+                  description:
+                    'Nome do usuários para buscar descrições e informações. O campo é opcional, caso não seja providenciado, será retornado as informações de todos os usuários conhecidos',
+                },
+              },
+            },
+          },
+        },
+      ],
+    });
 
-  chatContext.push(`${username}: ${message}`);
+    gptLog.success('GPT responded');
 
-  const gptResponse = await askGPT(fullPrompt);
+    const choice = gptResponse.choices[0];
 
-  let messageCleaned = gptResponse
-    .replace('Bot: ', '')
-    .replace('Professor: ', '')
-    .replace('bot: ', '')
-    .replace('professor: ', '')
-    .replace('Resposta: ', '')
-    .replace('resposta: ', '');
+    gptLog.info(choice);
 
-  if (messageCleaned.startsWith('"') && messageCleaned.endsWith('"')) {
-    messageCleaned = messageCleaned.slice(1, -1);
+    if (choice.message.tool_calls) {
+      gptLog.info(`Found ${choice.message.tool_calls.length} tool calls`);
+      gptLog.info(choice.message.tool_calls);
+
+      messages.push(choice.message);
+
+      for (const toolCall of choice.message.tool_calls) {
+        const functionName = toolCall.function.name;
+
+        // @ts-ignore
+        const functionToCall = botFunctions[functionName];
+
+        const functionArgs = JSON.parse(toolCall.function.arguments);
+
+        const functionResponse = functionToCall(functionArgs);
+
+        messages.push({
+          tool_call_id: toolCall.id,
+          role: 'tool',
+          content: functionResponse,
+        });
+      }
+
+      const secondResponse = await openai.chat.completions.create({
+        model: 'gpt-3.5-turbo-1106',
+        messages,
+      });
+
+      const secondChoice = secondResponse.choices[0];
+
+      gptLog.info(secondChoice);
+
+      return secondChoice.message.content ?? 'Desculpe, não consegui processar isso :(... ';
+    }
+    gptLog.info('No tool calls, returning message content.');
+
+    const message = choice.message.content?.trim();
+    return message ?? 'Desculpe, não consegui processar isso :(... ';
+  } catch (error: unknown) {
+    gptLog.error(error);
+
+    if (error instanceof Error) {
+      return `Desculpe, não consegui processar isso :(... ${error.message}`;
+    }
+    return `Desculpe, não consegui processar isso :(... `;
   }
-
-  return messageCleaned;
 }

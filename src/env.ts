@@ -53,6 +53,7 @@ envLog.info('Environment variables loaded.');
 
 declare global {
   namespace NodeJS {
+    // @ts-ignore
     interface ProcessEnv extends z.infer<typeof envSchema> {}
   }
 }
