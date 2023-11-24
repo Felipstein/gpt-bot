@@ -1,10 +1,16 @@
 import chalk from 'chalk';
 
 export class Logger {
+  private readonly color: chalk.Chalk;
+
   private readonly context: string;
 
+  private subContext: string | null;
+
   constructor(color: chalk.Chalk, context: string) {
-    this.context = color.bold(` ${context} `);
+    this.color = color.bold;
+    this.context = context;
+    this.subContext = null;
   }
 
   success(...messages: any[]) {
@@ -53,6 +59,25 @@ export class Logger {
 
       return message;
     });
+  }
+
+  private getContext() {
+    if (this.subContext) {
+      return this.color(` ${this.context}/${this.subContext} `);
+    }
+
+    return this.color(` ${this.context} `);
+  }
+
+  sub(subContext: string) {
+    this.subContext = subContext;
+    return this;
+  }
+
+  end() {
+    this.subContext = null;
+
+    return this;
   }
 
   static start(color: chalk.Chalk, context: string) {

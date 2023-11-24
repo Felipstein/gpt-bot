@@ -5,8 +5,8 @@
   "author": "Felipe Oliveira",
   "license": "MIT",
   "scripts": {
-    "dev": "tsnd --respawn --transpile-only --ignore-watch node_modules src/bot.ts",
-    "dev:gpt": "cross-env USE_GPT=true tsnd --respawn --transpile-only --ignore-watch node_modules src/bot.ts"
+    "dev": "tsnd --respawn --transpile-only --ignore-watch node_modules src/main.ts",
+    "dev:gpt": "cross-env USE_GPT=true tsnd --respawn --transpile-only --ignore-watch node_modules src/main.ts"
   },
   "dependencies": {
     "@discordjs/voice": "^0.16.1",
