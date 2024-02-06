@@ -17,6 +17,10 @@ export class Logger {
     console.info(...this.buildMessages(chalk.green, '✔', ...messages));
   }
 
+  pending(...messages: any[]) {
+    console.info(...this.buildMessages(chalk.cyan.italic, '⏳', ...messages));
+  }
+
   info(...messages: any[]) {
     console.info(...this.buildMessages(null, ...messages));
   }
@@ -34,7 +38,7 @@ export class Logger {
   }
 
   private buildMessages(color: chalk.Chalk | null = null, ...messages: any[]) {
-    const messagesMapped: any[] = [this.context, ...messages];
+    const messagesMapped: any[] = [this.getContext(), ...messages];
 
     if (!color) {
       return messagesMapped;
